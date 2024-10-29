@@ -43,45 +43,60 @@ export default function TransactionHistory() {
 
   useEffect(() => {
     setMounted(true)
-    if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
-      const tg = window.Telegram.WebApp
-      tg.ready()
+    const fetchData = async () => {
+      try {
+        if (typeof window !== 'undefined' && window.Telegram?.WebApp) {
+          const tg = window.Telegram.WebApp
+          tg.ready()
 
-      const initDataUnsafe = tg.initDataUnsafe || {}
+          const initDataUnsafe = tg.initDataUnsafe || {}
 
-      if (initDataUnsafe.user) {
-        fetch('/api/user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(initDataUnsafe.user),
-        })
-          .then((res) => res.json())
-          .then((data) => {
+          if (initDataUnsafe.user) {
+            const response = await fetch('/api/user', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(initDataUnsafe.user),
+            })
+            const data = await response.json()
+            
             if (data.error) {
               setError(data.error)
             } else {
-              setUser(data)
+              // Ensure all required fields have default values
+              setUser({
+                ...data,
+                piAmount: data.piAmount || [],
+                paymentMethod: data.paymentMethod || [],
+                paymentAddress: data.paymentAddress || [],
+                transactionStatus: data.transactionStatus || [],
+                piaddress: data.piaddress || [],
+                level: data.level || 1,
+                points: data.points || 0,
+                totalPiSold: data.totalPiSold || 0,
+                xp: data.xp || 0,
+                baseprice: data.baseprice || 0.15
+              })
             }
-          })
-          .catch((err) => {
-            setError('Failed to fetch user data')
-          })
-          .finally(() => {
-            setLoading(false)
-          })
-      } else {
-        setError('No user data available')
+          } else {
+            setError('No user data available')
+          }
+        } else {
+          setError('This App Should Be Opened On Telegram')
+        }
+      } catch (err) {
+        setError('Failed to fetch user data')
+        console.error('Error fetching user data:', err)
+      } finally {
         setLoading(false)
       }
-    } else {
-      setError('This App Should Be Opened On Telegram')
-      setLoading(false)
     }
+
+    fetchData()
   }, [])
 
-  const getPaymentBonus = (paymentMethod: string): number => {
+  const getPaymentBonus = (paymentMethod: string = ''): number => {
     switch (paymentMethod.toLowerCase()) {
       case 'paypal':
         return 0.28
@@ -96,7 +111,7 @@ export default function TransactionHistory() {
     }
   }
 
-  const getLevelBonus = (level: number): number => {
+  const getLevelBonus = (level: number = 1): number => {
     switch (level) {
       case 2:
         return 0.01
@@ -113,12 +128,22 @@ export default function TransactionHistory() {
     }
   }
 
-  const calculateAmount = (piAmount: number, paymentMethod: string, level: number, baseprice: number): number => {
-    const total = baseprice + getPaymentBonus(paymentMethod) + getLevelBonus(level)
-    return piAmount * total
+  const calculateAmount = (
+    piAmount: number = 0,
+    paymentMethod: string = '',
+    level: number = 1,
+    baseprice: number = 0.15
+  ): number => {
+    try {
+      const total = (baseprice || 0.15) + getPaymentBonus(paymentMethod) + getLevelBonus(level)
+      return piAmount * total
+    } catch (error) {
+      console.error('Error calculating amount:', error)
+      return 0
+    }
   }
 
-  const getStatusInfo = (status: string) => {
+  const getStatusInfo = (status: string = '') => {
     switch (status.toLowerCase()) {
       case 'processing':
         return {
@@ -147,6 +172,10 @@ export default function TransactionHistory() {
     }
   }
 
+  if (!mounted) {
+    return null
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto p-4 flex items-center justify-center h-screen">
@@ -171,64 +200,67 @@ export default function TransactionHistory() {
     )
   }
 
-  const transactions = user.piAmount.map((amount, index) => ({
-    piAmount: amount,
-    paymentMethod: user.paymentMethod[index] || '',
-    paymentAddress: user.paymentAddress[index] || '',
-    status: user.transactionStatus[index] || 'processing',
-    piAddress: user.piaddress[index] || ''
+  // Create transactions array with safety checks
+  const transactions = (user.piAmount || []).map((amount, index) => ({
+    piAmount: amount || 0,
+    paymentMethod: (user.paymentMethod || [])[index] || '',
+    paymentAddress: (user.paymentAddress || [])[index] || '',
+    status: (user.transactionStatus || [])[index] || 'processing',
+    piAddress: (user.piaddress || [])[index] || ''
   }))
 
   return (
-    <div className={`bg-gradient-to-b from-gray-50 to-gray-100 min-h-screen ${mounted ? 'fade-in' : ''}`}>
-      <Script src="https://kit.fontawesome.com/18e66d329f.js"/>
+    <div className="bg-gradient-to-b from-gray-50 to-gray-100 min-h-screen">
+      <Script 
+        src="https://kit.fontawesome.com/18e66d329f.js"
+        strategy="beforeInteractive"
+      />
       
-      <div className="w-full custom-purple text-white p-4 flex items-center justify-between shadow-lg slide-down">
+      <div className="w-full custom-purple text-white p-4 flex items-center justify-between shadow-lg">
         <Link href="/">
-          <button className="focus:outline-none hover-scale">
+          <button className="focus:outline-none hover:opacity-80">
             <i className="fas fa-arrow-left text-2xl"></i>
           </button>
         </Link>
         <h1 className="text-2xl font-bold">Transaction History</h1>
-        <div></div>
+        <div className="w-8"></div>
       </div>
 
       <div className="container mx-auto p-4 mb-4">
-        <div className="bg-white rounded-lg shadow-lg p-4 space-y-2 fade-in-up">
+        <div className="bg-white rounded-lg shadow-lg p-4 space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-gray-600">Level:</span>
-            <span className="font-bold custom-purple-text">{user.level}</span>
+            <span className="font-bold custom-purple-text">{user.level || 1}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-600">Total Pi Sold:</span>
-            <span className="font-bold custom-purple-text">{user.totalPiSold} Pi</span>
+            <span className="font-bold custom-purple-text">{user.totalPiSold || 0} Pi</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-600">Points:</span>
-            <span className="font-bold custom-purple-text">{user.points}</span>
+            <span className="font-bold custom-purple-text">{user.points || 0}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-600">XP:</span>
-            <span className="font-bold custom-purple-text">{user.xp}</span>
+            <span className="font-bold custom-purple-text">{user.xp || 0}</span>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto p-4 space-y-4">
         {transactions.length === 0 ? (
-          <div className="text-center text-gray-500 mt-8 fade-in-up">
+          <div className="text-center text-gray-500 mt-8">
             No transactions yet
           </div>
         ) : (
-          [...transactions].reverse().map((transaction, index) => {
+          transactions.reverse().map((transaction, index) => {
             const statusInfo = getStatusInfo(transaction.status)
             const isExpanded = expandedCard === index
             
             return (
               <div 
                 key={index}
-                className="bg-white rounded-lg shadow-lg p-6 space-y-3 fade-in-up cursor-pointer"
-                style={{ animationDelay: `${index * 0.1}s` }}
+                className="bg-white rounded-lg shadow-lg p-6 space-y-3 cursor-pointer transition-all duration-200"
                 onClick={() => setExpandedCard(isExpanded ? null : index)}
               >
                 <div className="flex justify-between items-center">
@@ -302,44 +334,6 @@ export default function TransactionHistory() {
         @keyframes spin {
           to {
             transform: rotate(360deg);
-          }
-        }
-        .fade-in {
-          opacity: 0;
-          animation: fadeIn 0.5s ease-out forwards;
-        }
-        .fade-in-up {
-          opacity: 0;
-          transform: translateY(20px);
-          animation: fadeInUp 0.5s ease-out forwards;
-        }
-        .slide-down {
-          transform: translateY(-100%);
-          animation: slideDown 0.5s ease-out forwards;
-        }
-        .hover-scale {
-          transition: transform 0.2s ease-out;
-        }
-        .hover-scale:hover {
-          transform: scale(1.05);
-        }
-        .hover-scale:active {
-          transform: scale(0.95);
-        }
-        @keyframes fadeIn {
-          to {
-            opacity: 1;
-          }
-        }
-        @keyframes fadeInUp {
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes slideDown {
-          to {
-            transform: translateY(0);
           }
         }
       `}</style>
